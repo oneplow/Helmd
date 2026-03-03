@@ -1,0 +1,15 @@
+services:
+  helmd:
+    build: .
+    container_name: helmd
+    restart: unless-stopped
+    ports:
+      - "9117:9117"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - helmd_data:/data
+    environment:
+      - HELMD_PORT=9117
+
+volumes:
+  helmd_data:
