@@ -3,6 +3,7 @@ import { getDocker } from '../docker.js'
 import { regenerateApiKey } from '../config.js'
 import { execSync } from 'child_process'
 import fs from 'fs'
+import os from 'os'
 
 const router = Router()
 
@@ -34,64 +35,46 @@ router.get('/info', async (req, res) => {
         const info = await docker.info()
         const images = await docker.listImages()
 
-        // Calculate actual memory and CPU used by running containers
-        let containersMemUsed = 0
-        let containersCpuUsed = 0
+        // Get Host OS Stats (more reliable than summing container stats)
+        const totalMem = os.totalmem()
+        const freeMem = os.freemem()
+        const usedMem = totalMem - freeMem
+
+        // Calculate CPU Load average (1 min)
+        const loadAvg = os.loadavg()[0]
+        const ncpu = os.cpus().length
+        const cpuUsedPercent = Math.min(100, (loadAvg / ncpu) * 100)
+
+        // Still calculate container stats if wanted, but host stats are primary
+        let containersMemUsedTotal = 0
+        let containersCpuUsedTotal = 0
 
         try {
             const runningContainers = await docker.listContainers({ filters: { status: ['running'] } })
-
-            // Limit stats gathering to first 20 containers to prevent massive slowdowns
-            // and add a timeout per request
-            const statsPromises = runningContainers.slice(0, 20).map(async (c) => {
+            const statsPromises = runningContainers.slice(0, 10).map(async (c) => {
                 try {
                     const container = docker.getContainer(c.Id)
-                    // Use a short timeout for stats to keep info route responsive
                     const stats = await Promise.race([
                         container.stats({ stream: false }),
-                        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500))
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000))
                     ])
-
                     const mem = stats.memory_stats?.usage || 0
-
-                    let cpuPct = 0
-                    try {
-                        const cpuDelta = (stats.cpu_stats?.cpu_usage?.total_usage || 0) - (stats.precpu_stats?.cpu_usage?.total_usage || 0)
-                        const systemDelta = (stats.cpu_stats?.system_cpu_usage || 0) - (stats.precpu_stats?.system_cpu_usage || 0)
-                        if (systemDelta > 0 && cpuDelta > 0) {
-                            const cpus = stats.cpu_stats?.online_cpus || 1
-                            cpuPct = (cpuDelta / systemDelta) * cpus * 100
-                        }
-                    } catch { }
-
-                    return { mem, cpu: cpuPct }
-                } catch { return { mem: 0, cpu: 0 } }
+                    return { mem }
+                } catch { return { mem: 0 } }
             })
-
             const resultsData = await Promise.all(statsPromises)
-            containersMemUsed = resultsData.reduce((a, b) => a + b.mem, 0)
-            containersCpuUsed = resultsData.reduce((a, b) => a + b.cpu, 0)
+            containersMemUsedTotal = resultsData.reduce((a, b) => a + b.mem, 0)
         } catch { }
 
         // Docker policies
         let policies = {}
         try {
-            const containers = await docker.listContainers({ all: true })
-            let resourceLimitsSet = 0
-
-            for (const container of containers) {
-                const cInfo = await docker.getContainer(container.Id).inspect()
-                if (cInfo.HostConfig?.Memory > 0 || cInfo.HostConfig?.CpuQuota > 0 || cInfo.HostConfig?.CpuShares > 0) {
-                    resourceLimitsSet++
-                }
-            }
-
             const danglingImages = images.filter(img => img.RepoTags?.includes('<none>:<none>')).length
             const officialImagesCount = images.filter(img => img.RepoTags?.some(tag => !tag.includes('/'))).length
 
             policies = {
                 healthyImagesCount: images.length - danglingImages,
-                resourceLimitsSet,
+                resourceLimitsSet: 0, // Simplified to avoid slow inspects
                 officialBaseImages: officialImagesCount,
             }
         } catch { }
@@ -99,14 +82,12 @@ router.get('/info', async (req, res) => {
         // Host Storage calculation
         let storage = { total: 0, used: 0, usedPercent: 0 }
         try {
-            // Try node's built-in statfs first (available in newer node versions)
             if (fs.statfsSync) {
                 const stats = fs.statfsSync('/')
                 storage.total = stats.bsize * stats.blocks
                 storage.used = stats.bsize * (stats.blocks - stats.bfree)
                 storage.usedPercent = (storage.used / storage.total) * 100
             } else {
-                // Fallback to df command
                 const dfOutput = execSync('df -k / | tail -1').toString().trim()
                 const parts = dfOutput.split(/\s+/)
                 if (parts.length >= 5) {
@@ -117,9 +98,7 @@ router.get('/info', async (req, res) => {
                     storage.usedPercent = (usedKB / totalKB) * 100
                 }
             }
-        } catch (err) {
-            console.warn('[helmd] Failed to get host storage info:', err.message)
-        }
+        } catch (err) { }
 
         res.json({
             containers: {
@@ -130,14 +109,16 @@ router.get('/info', async (req, res) => {
             },
             images: { total: images.length },
             memory: {
-                total: info.MemTotal,
-                used: containersMemUsed,
+                total: totalMem,
+                used: usedMem,
+                containersUsed: containersMemUsedTotal,
             },
             cpu: {
-                usedPercent: containersCpuUsed,
+                usedPercent: cpuUsedPercent,
+                loadAvg,
             },
             storage,
-            ncpu: info.NCPU,
+            ncpu: ncpu,
             serverVersion: info.ServerVersion,
             operatingSystem: info.OperatingSystem,
             architecture: info.Architecture,
