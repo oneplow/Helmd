@@ -61,10 +61,14 @@ docker exec -it helmd node src/setup.js reset
 - **HTTPS**: แนะนำให้รัน Helmd หลัง Reverse Proxy (เช่น Nginx) พร้อมใบรับรอง SSL หากต้องใช้งานผ่าน Public Network ที่ไม่น่าเชื่อถือ
 
 ## ลบ container + network
+```bash
 docker compose down
+```
 
 ## ลบ container + network + volume (ลบ data ด้วย ⚠️)
+```bash
 docker compose down -v
+```
 
 อันนี้จะลบ world / database / persistent data หมดเลย
 
