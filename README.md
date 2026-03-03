@@ -44,7 +44,7 @@ docker logs helmd
    - **Host Name**: ตั้งชื่อเรียก เช่น "Production VPS"
    - **Helmd URL**: ใส่ IP ของ VPS พร้อมพอร์ต 9117 (เช่น `http://103.xx.xx.xx:9117`)
    - **API Key**: นำ Key ที่ได้จากขั้นตอนก่อนหน้ามาใส่
-5. กดปุ่ม **"🔌 Test Connection"** เพื่อตรวจสอบความถูกต้อง
+5. กดปุ่ม **"🔌 Connection"** เพื่อตรวจสอบความถูกต้อง
 6. หากสำเร็จ ให้กด **"Save Host"**
 
 ---
