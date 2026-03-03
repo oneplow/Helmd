@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { getDocker } from '../docker.js'
-import { regenerateApiKey } from '../config.js'
+import { regenerateApiKey, getWhitelist, updateWhitelist } from '../config.js'
 import { execSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
@@ -49,6 +49,31 @@ router.post('/reset-key', async (req, res) => {
         res.json({ success: true, message: 'API key has been successfully reset and invalidated.' })
     } catch (err) {
         res.status(500).json({ error: 'Failed to reset API key', detail: err.message })
+    }
+})
+
+/**
+ * GET /api/system/whitelist
+ * Returns the current IP whitelist.
+ */
+router.get('/whitelist', (req, res) => {
+    res.json(getWhitelist())
+})
+
+/**
+ * PATCH /api/system/whitelist
+ * Updates the IP whitelist.
+ */
+router.patch('/whitelist', (req, res) => {
+    try {
+        const { whitelist } = req.body
+        if (!Array.isArray(whitelist)) {
+            return res.status(400).json({ error: 'Whitelist must be an array' })
+        }
+        const updated = updateWhitelist(whitelist)
+        res.json({ success: true, whitelist: updated })
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update whitelist', detail: err.message })
     }
 })
 

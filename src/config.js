@@ -48,6 +48,7 @@ export function initConfig() {
 
     config = {
         apiKeyHash: keyHash,
+        whitelist: [],
         createdAt: new Date().toISOString(),
     }
 
@@ -56,14 +57,14 @@ export function initConfig() {
     // Print the key ONCE — user must copy it now
     console.log('')
     console.log('╔══════════════════════════════════════════════════════════╗')
-    console.log('║                   HELMD - FIRST RUN                     ║')
+    console.log('║                   HELMD - FIRST RUN                      ║')
     console.log('╠══════════════════════════════════════════════════════════╣')
-    console.log('║                                                        ║')
-    console.log(`║  Your API Key: ${rawKey}  ║`)
-    console.log('║                                                        ║')
-    console.log('║  ⚠  SAVE THIS KEY NOW — it will NOT be shown again!    ║')
-    console.log('║  Copy it to your Helm dashboard → Settings → Add Host  ║')
-    console.log('║                                                        ║')
+    console.log('║                                                          ║')
+    console.log(`║  Your API Key: ${rawKey}                                 ║`)
+    console.log('║                                                          ║')
+    console.log('║  SAVE THIS KEY NOW — it will NOT be shown again!         ║')
+    console.log('║  Copy it to your Helm dashboard → Settings → Add Host    ║')
+    console.log('║                                                          ║')
     console.log('╚══════════════════════════════════════════════════════════╝')
     console.log('')
 
@@ -99,4 +100,21 @@ export function regenerateApiKey() {
     console.log('')
 
     return rawKey
+}
+
+/**
+ * Whitelist Management
+ */
+export function getWhitelist() {
+    const config = readConfig()
+    return config?.whitelist || []
+}
+
+export function updateWhitelist(newList) {
+    if (!Array.isArray(newList)) throw new Error('Whitelist must be an array')
+    const config = readConfig() || {}
+    config.whitelist = newList.map(ip => ip.trim()).filter(Boolean)
+    config.updatedAt = new Date().toISOString()
+    writeConfig(config)
+    return config.whitelist
 }

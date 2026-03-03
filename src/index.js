@@ -5,8 +5,9 @@ import rateLimit from 'express-rate-limit'
 import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 
-import { initConfig, verifyApiKey } from './config.js'
+import { initConfig, verifyApiKey, getWhitelist } from './config.js'
 import { authMiddleware } from './auth.js'
+import { whitelistMiddleware } from './whitelist.js'
 
 // Routes
 import pingRouter from './routes/ping.js'
@@ -38,6 +39,9 @@ const limiter = rateLimit({
     message: { error: 'Too many requests, please try again later' }
 })
 app.use(limiter)
+
+// Whitelist middleware first
+app.use(whitelistMiddleware)
 
 // Auth middleware on all /api routes
 app.use('/api', authMiddleware)
@@ -78,6 +82,22 @@ const wss = new WebSocketServer({
         // Verify API key from query string for WebSocket connections
         const url = new URL(info.req.url, `http://${info.req.headers.host}`)
         const apiKey = url.searchParams.get('apiKey')
+
+        // Verify Whitelist for WebSocket
+        const whitelist = getWhitelist()
+        if (whitelist && whitelist.length > 0) {
+            const clientIp = info.req.headers['x-forwarded-for']?.split(',')[0].trim() || info.req.socket.remoteAddress
+            const isAllowed = whitelist.some(allowed => {
+                const pattern = allowed.trim()
+                if (pattern === clientIp) return true
+                if (pattern.endsWith('*') && clientIp.startsWith(pattern.slice(0, -1))) return true
+                return false
+            })
+            if (!isAllowed) {
+                callback(false, 403, 'Forbidden: IP not whitelisted')
+                return
+            }
+        }
 
         if (!apiKey || !verifyApiKey(apiKey)) {
             callback(false, 401, 'Unauthorized')
