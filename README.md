@@ -5,6 +5,8 @@
 ## คุณสมบัติเด่น
 - 🛡️ **ความปลอดภัยสูง**: เชื่อมต่อกับ Docker ผ่าน Unix Socket ภายในเครื่องเท่านั้น ไม่ต้องเปิดพอร์ต Docker ให้โลกภายนอกเห็น
 - 🔑 **API Key Auth**: ทุก Request ต้องมี API Key ที่ถูกต้อง และมีการเก็บ Key ในรูปแบบ Hash (SHA256) พร้อมสิทธิ์การเข้าถึงไฟล์คอนฟิกที่เข้มงวด
+- 🔒 **IP Whitelist**: (ใหม่!) ระบบป้องกันในตัวที่อนุญาตให้เฉพาะ IP หรือ Domain ที่กำหนดเท่านั้นที่สามารถเชื่อมต่อได้
+- 📊 **Precision Monitoring**: ระบบส่งข้อมูล CPU แยกระดับ Host แบบ Real-time (Delta-based) ให้ความแม่นยำสูงสุด
 - 🚀 **รองรับทุกฟีเจอร์**: ครอบคลุมการจัดการ Containers, Images, Volumes, Networks และ Stacks (Docker Compose)
 - 💻 **Terminal ในตัว**: รองรับ Interactive Terminal ผ่าน WebSocket ใช้งานได้ลื่นไหลเหมือนพิมพ์ในเครื่องจริงๆ
 
@@ -27,8 +29,8 @@ docker compose up -d
 docker logs helmd
 ```
 คุณจะพบข้อความลักษณะนี้:
-> `[helmd] >>> FIRST RUN: YOUR API KEY IS: hd_xxxxxxxxxxxxxxxxxxxxxxxxxxx`  
-> `[helmd] >>> PLEASE SAVE IT SECURELY. IT WILL NOT BE SHOWN AGAIN.`
+> `Your API Key: hd_xxxxxxxxxxxxxxxxxxxxxxxxxxx`  
+> `⚠ SAVE THIS KEY NOW — it will NOT be shown again!`
 
 > [!IMPORTANT]
 > **จดจำ API Key นี้ไว้ให้ดี** เพราะระบบจะแสดงเพียงครั้งเดียวเท่านั้น (ในรอบหน้าจะถูกเก็บเป็น Hash เพื่อความปลอดภัย)
@@ -49,40 +51,34 @@ docker logs helmd
 
 ---
 
-## การจัดการ API Key
+## ฟีเจอร์ความปลอดภัย (Security Features)
+
+### 1. การจัดการ IP Whitelist
+คุณสามารถจำกัดสิทธิ์การเข้าถึง Helmd ได้จากหน้า Dashboard ของ Helm โดยตรง (ในหน้า Settings -> คลิกไอคอนรูปโล่ 🛡️) 
+- หาก Whitelist ว่างเปล่า: อนุญาตทุก IP
+- หากระบุ IP: อนุญาตเฉพาะ IP นั้นๆ
+- รองรับ Wildcard: เช่น `1.2.3.*` เพื่ออนุญาตทั้งวง IP
+
+### 2. การจัดการ API Key
 หากคุณลืม API Key หรือต้องการสร้างใหม่ สามารถทำได้ผ่าน CLI:
 ```bash
 docker exec -it helmd node src/setup.js reset
 ```
 จากนั้นรีสตาร์ทคอนเทนเนอร์และดู logs อีกครั้งเพื่อรับ Key ใหม่
 
-## ความปลอดภัย (Security Tips)
-- **Firewall**: ควรอนุญาตเฉพาะ IP ของเครื่องที่รัน Helm ให้เข้าถึงพอร์ต 9117 ของ VPS ได้เท่านั้น (Whitelist IP)
-- **HTTPS**: แนะนำให้รัน Helmd หลัง Reverse Proxy (เช่น Nginx) พร้อมใบรับรอง SSL หากต้องใช้งานผ่าน Public Network ที่ไม่น่าเชื่อถือ
+---
 
-## ลบ container + network
+## การดูแลรักษาระบบ (Maintenance)
+
+### หยุดการทำงาน
 ```bash
 docker compose down
 ```
 
-## ลบ container + network + volume (ลบ data ด้วย ⚠️)
+### ลบข้อมูลทั้งหมด (รวมถึง API Key และ Config ⚠️)
 ```bash
 docker compose down -v
 ```
 
-อันนี้จะลบ world / database / persistent data หมดเลย
-
-## ลบ image ที่ build จาก Dockerfile
-
-ดู image ก่อน
-```bash
-docker images
-```
-ลบทีละตัว
-```bash
-docker rmi IMAGE_ID
-```
-หรือถ้า compose build เอง ใช้
-```bash
-docker compose down --rmi all
-```
+---
+*Developed for Helm Ecosystem*
