@@ -51,21 +51,50 @@ router.get('/:id/stats', async (req, res) => {
         const container = docker.getContainer(req.params.id)
         const stats = await container.stats({ stream: false })
 
-        const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage
-        const systemDelta = stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage
-        const numCpus = stats.cpu_stats.online_cpus || stats.cpu_stats.cpu_usage.percpu_usage?.length || 1
-        const cpuPercent = systemDelta > 0 ? (cpuDelta / systemDelta) * numCpus * 100 : 0
+        if (!stats) return res.status(500).json({ error: 'Failed to fetch stats' })
 
-        const memUsage = stats.memory_stats.usage || 0
-        const memLimit = stats.memory_stats.limit || 1
-        const memPercent = (memUsage / memLimit) * 100
+        // Safe CPU Calculation
+        let cpuPercent = 0
+        try {
+            const cpuUsage = stats.cpu_stats?.cpu_usage?.total_usage || 0
+            const preCpuUsage = stats.precpu_stats?.cpu_usage?.total_usage || 0
+            const systemUsage = stats.cpu_stats?.system_cpu_usage || 0
+            const preSystemUsage = stats.precpu_stats?.system_cpu_usage || 0
+            const numCpus = stats.cpu_stats?.online_cpus || stats.cpu_stats?.cpu_usage?.percpu_usage?.length || 1
 
-        let netRx = 0, netTx = 0
-        if (stats.networks) {
-            for (const iface of Object.values(stats.networks)) {
-                netRx += iface.rx_bytes || 0
-                netTx += iface.tx_bytes || 0
+            const cpuDelta = cpuUsage - preCpuUsage
+            const systemDelta = systemUsage - preSystemUsage
+
+            if (systemDelta > 0 && cpuDelta > 0) {
+                cpuPercent = (cpuDelta / systemDelta) * numCpus * 100
             }
+        } catch (e) {
+            console.error('[helmd] CPU Stats calculation error:', e.message)
+        }
+
+        // Safe Memory Calculation
+        let memUsage = 0
+        let memLimit = 0
+        let memPercent = 0
+        try {
+            memUsage = stats.memory_stats?.usage || 0
+            memLimit = stats.memory_stats?.limit || 1
+            memPercent = (memUsage / memLimit) * 100
+        } catch (e) {
+            console.error('[helmd] Memory Stats calculation error:', e.message)
+        }
+
+        // Safe Network Calculation
+        let netRx = 0, netTx = 0
+        try {
+            if (stats.networks) {
+                for (const iface of Object.values(stats.networks)) {
+                    netRx += iface.rx_bytes || 0
+                    netTx += iface.tx_bytes || 0
+                }
+            }
+        } catch (e) {
+            console.error('[helmd] Network Stats calculation error:', e.message)
         }
 
         res.json({
@@ -78,6 +107,7 @@ router.get('/:id/stats', async (req, res) => {
             timestamp: Date.now(),
         })
     } catch (err) {
+        console.error('[helmd] Stats route error:', err.message)
         res.status(500).json({ error: err.message })
     }
 })
@@ -432,6 +462,14 @@ router.get('/:id/files', async (req, res) => {
 
             const stream = await exec.start({ hijack: true, stdin: false })
 
+            // Add timeout for file reading
+            const timeout = setTimeout(() => {
+                if (!res.headersSent) {
+                    stream.destroy()
+                    res.status(504).json({ error: 'File reading timed out' })
+                }
+            }, 15000)
+
             let output = ''
             docker.modem.demuxStream(stream, {
                 write: (data) => { output += data.toString('utf8') }
@@ -439,8 +477,18 @@ router.get('/:id/files', async (req, res) => {
                 write: (data) => { output += data.toString('utf8') }
             })
 
-            stream.on('end', () => res.json({ content: output }))
-            stream.on('error', (err) => res.status(500).json({ error: err.message }))
+            stream.on('end', () => {
+                clearTimeout(timeout)
+                if (!res.headersSent) {
+                    res.json({ content: output })
+                }
+            })
+            stream.on('error', (err) => {
+                clearTimeout(timeout)
+                if (!res.headersSent) {
+                    res.status(500).json({ error: err.message })
+                }
+            })
             return
         }
 
@@ -453,6 +501,14 @@ router.get('/:id/files', async (req, res) => {
 
         const stream = await exec.start({ hijack: true, stdin: false })
 
+        // Add timeout to prevent hanging requests
+        const timeout = setTimeout(() => {
+            if (!res.headersSent) {
+                stream.destroy()
+                res.status(504).json({ error: 'File listing timed out' })
+            }
+        }, 15000)
+
         let output = ''
         docker.modem.demuxStream(stream, {
             write: (data) => { output += data.toString('utf8') }
@@ -461,6 +517,8 @@ router.get('/:id/files', async (req, res) => {
         })
 
         stream.on('end', () => {
+            clearTimeout(timeout)
+            if (res.headersSent) return
             if (output.includes('No such file or directory') || output.includes('Not a directory')) {
                 return res.status(400).json({ error: output.trim() })
             }

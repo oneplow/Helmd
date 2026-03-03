@@ -59,3 +59,25 @@ docker exec -it helmd node src/setup.js reset
 ## ความปลอดภัย (Security Tips)
 - **Firewall**: ควรอนุญาตเฉพาะ IP ของเครื่องที่รัน Helm ให้เข้าถึงพอร์ต 9117 ของ VPS ได้เท่านั้น (Whitelist IP)
 - **HTTPS**: แนะนำให้รัน Helmd หลัง Reverse Proxy (เช่น Nginx) พร้อมใบรับรอง SSL หากต้องใช้งานผ่าน Public Network ที่ไม่น่าเชื่อถือ
+
+## ลบ container + network
+docker compose down
+
+## ลบ container + network + volume (ลบ data ด้วย ⚠️)
+docker compose down -v
+
+อันนี้จะลบ world / database / persistent data หมดเลย
+
+## ลบ image ที่ build จาก Dockerfile
+
+ดู image ก่อน
+
+docker images
+
+ลบทีละตัว
+
+docker rmi IMAGE_ID
+
+หรือถ้า compose build เอง ใช้
+
+docker compose down --rmi all

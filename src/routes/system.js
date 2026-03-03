@@ -40,19 +40,26 @@ router.get('/info', async (req, res) => {
 
         try {
             const runningContainers = await docker.listContainers({ filters: { status: ['running'] } })
-            const statsPromises = runningContainers.map(async (c) => {
+
+            // Limit stats gathering to first 20 containers to prevent massive slowdowns
+            // and add a timeout per request
+            const statsPromises = runningContainers.slice(0, 20).map(async (c) => {
                 try {
                     const container = docker.getContainer(c.Id)
-                    const stats = await container.stats({ stream: false })
+                    // Use a short timeout for stats to keep info route responsive
+                    const stats = await Promise.race([
+                        container.stats({ stream: false }),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500))
+                    ])
 
                     const mem = stats.memory_stats?.usage || 0
 
                     let cpuPct = 0
                     try {
-                        const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage
-                        const systemDelta = stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage
+                        const cpuDelta = (stats.cpu_stats?.cpu_usage?.total_usage || 0) - (stats.precpu_stats?.cpu_usage?.total_usage || 0)
+                        const systemDelta = (stats.cpu_stats?.system_cpu_usage || 0) - (stats.precpu_stats?.system_cpu_usage || 0)
                         if (systemDelta > 0 && cpuDelta > 0) {
-                            const cpus = stats.cpu_stats.online_cpus || 1
+                            const cpus = stats.cpu_stats?.online_cpus || 1
                             cpuPct = (cpuDelta / systemDelta) * cpus * 100
                         }
                     } catch { }
@@ -61,9 +68,9 @@ router.get('/info', async (req, res) => {
                 } catch { return { mem: 0, cpu: 0 } }
             })
 
-            const results = await Promise.all(statsPromises)
-            containersMemUsed = results.reduce((a, b) => a + b.mem, 0)
-            containersCpuUsed = results.reduce((a, b) => a + b.cpu, 0)
+            const resultsData = await Promise.all(statsPromises)
+            containersMemUsed = resultsData.reduce((a, b) => a + b.mem, 0)
+            containersCpuUsed = resultsData.reduce((a, b) => a + b.cpu, 0)
         } catch { }
 
         // Docker policies
