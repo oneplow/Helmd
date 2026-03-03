@@ -29,10 +29,10 @@ app.use(helmet())
 app.use(cors())
 app.use(express.json({ limit: '10mb' }))
 
-// Rate limiting: 200 requests per minute per IP
+// Rate limiting: 1000 requests per minute per IP (increased for dashboard polling)
 const limiter = rateLimit({
     windowMs: 60 * 1000,
-    max: 200,
+    max: 1000,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests, please try again later' }
