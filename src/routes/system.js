@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import { getDocker } from '../docker.js'
 import { regenerateApiKey } from '../config.js'
+import { execSync } from 'child_process'
+import fs from 'fs'
 
 const router = Router()
 
@@ -87,6 +89,31 @@ router.get('/info', async (req, res) => {
             }
         } catch { }
 
+        // Host Storage calculation
+        let storage = { total: 0, used: 0, usedPercent: 0 }
+        try {
+            // Try node's built-in statfs first (available in newer node versions)
+            if (fs.statfsSync) {
+                const stats = fs.statfsSync('/')
+                storage.total = stats.bsize * stats.blocks
+                storage.used = stats.bsize * (stats.blocks - stats.bfree)
+                storage.usedPercent = (storage.used / storage.total) * 100
+            } else {
+                // Fallback to df command
+                const dfOutput = execSync('df -k / | tail -1').toString().trim()
+                const parts = dfOutput.split(/\s+/)
+                if (parts.length >= 5) {
+                    const totalKB = parseInt(parts[1], 10)
+                    const usedKB = parseInt(parts[2], 10)
+                    storage.total = totalKB * 1024
+                    storage.used = usedKB * 1024
+                    storage.usedPercent = (usedKB / totalKB) * 100
+                }
+            }
+        } catch (err) {
+            console.warn('[helmd] Failed to get host storage info:', err.message)
+        }
+
         res.json({
             containers: {
                 total: info.Containers,
@@ -102,6 +129,7 @@ router.get('/info', async (req, res) => {
             cpu: {
                 usedPercent: containersCpuUsed,
             },
+            storage,
             ncpu: info.NCPU,
             serverVersion: info.ServerVersion,
             operatingSystem: info.OperatingSystem,
