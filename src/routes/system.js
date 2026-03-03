@@ -7,6 +7,33 @@ import os from 'os'
 
 const router = Router()
 
+let lastCpuInfo = null
+
+function getCpuUsage() {
+    const cpus = os.cpus()
+    let user = 0, nice = 0, sys = 0, idle = 0, irq = 0
+    for (const cpu of cpus) {
+        user += cpu.times.user
+        nice += cpu.times.nice
+        sys += cpu.times.sys
+        idle += cpu.times.idle
+        irq += cpu.times.irq
+    }
+    const total = user + nice + sys + idle + irq
+    if (!lastCpuInfo) {
+        lastCpuInfo = { user, nice, sys, idle, irq, total, ts: Date.now() }
+        return (os.loadavg()[0] / (cpus.length || 1)) * 100 // Fallback to load on first call
+    }
+
+    const diffTotal = total - lastCpuInfo.total
+    const diffIdle = idle - lastCpuInfo.idle
+
+    lastCpuInfo = { user, nice, sys, idle, irq, total, ts: Date.now() }
+
+    if (diffTotal <= 0) return 0
+    return Math.min(100, Math.max(0, ((diffTotal - diffIdle) / diffTotal) * 100))
+}
+
 async function getSystemStatsInfo() {
     const docker = getDocker()
     const info = await docker.info()
