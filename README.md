@@ -71,13 +71,14 @@ docker compose down -v
 ## ลบ image ที่ build จาก Dockerfile
 
 ดู image ก่อน
-
+```bash
 docker images
-
+```
 ลบทีละตัว
-
+```bash
 docker rmi IMAGE_ID
-
+```
 หรือถ้า compose build เอง ใช้
-
+```bash
 docker compose down --rmi all
+```
