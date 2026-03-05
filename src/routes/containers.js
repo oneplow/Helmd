@@ -19,6 +19,7 @@ router.get('/', async (req, res) => {
             state: c.Status,
             ports: c.Ports?.map(p => p.PublicPort ? `${p.PublicPort}:${p.PrivatePort}` : null).filter(Boolean),
             created: c.Created,
+            labels: c.Labels || {},
         }))
         res.json(result)
     } catch (err) {
