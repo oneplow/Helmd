@@ -81,4 +81,4 @@ docker compose down -v
 ```
 
 ---
-*Developed for Helm Ecosystem*
+*Developed for Helm Daemon*
