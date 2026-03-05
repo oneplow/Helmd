@@ -1,5 +1,12 @@
 import { Router } from 'express'
 import { getDocker } from '../docker.js'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
+import fs from 'fs/promises'
+import path from 'path'
+import os from 'os'
+
+const execFileAsync = promisify(execFile)
 
 const router = Router()
 
@@ -131,6 +138,52 @@ router.post('/', async (req, res) => {
         res.json({ success: true, results })
     } catch (err) {
         res.status(500).json({ error: err.message })
+    }
+})
+
+/**
+ * POST /api/compose
+ * Deploy or teardown a compose stack from YAML
+ */
+router.post('/compose', async (req, res) => {
+    const { composeYaml, action = 'up', projectName = 'helm-stack' } = req.body
+
+    if (!composeYaml) {
+        return res.status(400).json({ error: 'Missing composeYaml' })
+    }
+
+    const cleanProjectName = (projectName || 'helm-stack').replace(/[^a-zA-Z0-9_-]/g, '')
+    if (!cleanProjectName) {
+        return res.status(400).json({ error: 'Invalid project name' })
+    }
+
+    const tempDir = os.tmpdir()
+    const filePath = path.join(tempDir, `docker-compose-${cleanProjectName}-${Date.now()}.yml`)
+
+    try {
+        await fs.writeFile(filePath, composeYaml, 'utf8')
+
+        let args = []
+        if (action === 'up') {
+            args = ['compose', '-f', filePath, '-p', cleanProjectName, 'up', '-d', '--pull', 'missing']
+        } else if (action === 'down') {
+            args = ['compose', '-f', filePath, '-p', cleanProjectName, 'down']
+        } else {
+            await fs.unlink(filePath).catch(() => { })
+            return res.status(400).json({ error: `Unknown action: ${action}` })
+        }
+
+        const { stdout, stderr } = await execFileAsync('docker', args, { timeout: 120000 })
+
+        // Cleanup temp file after down
+        if (action === 'down') {
+            await fs.unlink(filePath).catch(() => { })
+        }
+
+        res.json({ success: true, logs: stdout || stderr || 'Done' })
+    } catch (err) {
+        await fs.unlink(filePath).catch(() => { })
+        res.status(500).json({ error: err.stderr || err.message || 'Compose execution failed' })
     }
 })
 
