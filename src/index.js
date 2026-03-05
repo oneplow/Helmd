@@ -8,6 +8,7 @@ import { WebSocketServer } from 'ws'
 import { initConfig, verifyApiKey, getWhitelist } from './config.js'
 import { authMiddleware } from './auth.js'
 import { whitelistMiddleware } from './whitelist.js'
+import { startCache, stopCache } from './smartCache.js'
 
 // Routes
 import pingRouter from './routes/ping.js'
@@ -110,6 +111,9 @@ const wss = new WebSocketServer({
 
 setupTerminalWs(wss)
 
+// Start smart cache before server
+startCache()
+
 // Start server
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`[helmd] Daemon running on port ${PORT}`)
@@ -117,3 +121,18 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(`[helmd] Terminal WS: ws://0.0.0.0:${PORT}/ws/terminal`)
     console.log(`[helmd] Health: http://0.0.0.0:${PORT}/health`)
 })
+
+// Graceful shutdown
+const shutdown = () => {
+    console.log('[helmd] Shutting down...')
+    stopCache()
+    server.close(() => {
+        console.log('[helmd] Server closed')
+        process.exit(0)
+    })
+    // Force exit after 5s
+    setTimeout(() => process.exit(1), 5000)
+}
+
+process.on('SIGTERM', shutdown)
+process.on('SIGINT', shutdown)
