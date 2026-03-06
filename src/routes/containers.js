@@ -114,6 +114,81 @@ router.get('/:id/stats', async (req, res) => {
 })
 
 /**
+ * GET /api/containers/:id/stats/stream
+ * Server-Sent Events (SSE) stream for container stats
+ */
+router.get('/:id/stats/stream', async (req, res) => {
+    try {
+        const docker = getDocker()
+        const container = docker.getContainer(req.params.id)
+
+        res.setHeader('Content-Type', 'text/event-stream')
+        res.setHeader('Cache-Control', 'no-cache')
+        res.setHeader('Connection', 'keep-alive')
+        res.flushHeaders()
+
+        const stream = await container.stats({ stream: true })
+
+        stream.on('data', (chunk) => {
+            try {
+                const stats = JSON.parse(chunk.toString('utf8'))
+
+                let cpuPercent = 0
+                const cpuUsage = stats.cpu_stats?.cpu_usage?.total_usage || 0
+                const preCpuUsage = stats.precpu_stats?.cpu_usage?.total_usage || 0
+                const systemUsage = stats.cpu_stats?.system_cpu_usage || 0
+                const preSystemUsage = stats.precpu_stats?.system_cpu_usage || 0
+                const numCpus = stats.cpu_stats?.online_cpus || stats.cpu_stats?.cpu_usage?.percpu_usage?.length || 1
+
+                const cpuDelta = cpuUsage - preCpuUsage
+                const systemDelta = systemUsage - preSystemUsage
+
+                if (systemDelta > 0 && cpuDelta > 0) {
+                    cpuPercent = (cpuDelta / systemDelta) * numCpus * 100
+                }
+
+                const memUsage = stats.memory_stats?.usage || 0
+                const memLimit = stats.memory_stats?.limit || 1
+                const memPercent = (memUsage / memLimit) * 100
+
+                let netRx = 0, netTx = 0
+                if (stats.networks) {
+                    for (const iface of Object.values(stats.networks)) {
+                        netRx += iface.rx_bytes || 0
+                        netTx += iface.tx_bytes || 0
+                    }
+                }
+
+                const output = {
+                    cpu: Math.round(cpuPercent * 100) / 100,
+                    memUsage,
+                    memLimit,
+                    memPercent: Math.round(memPercent * 100) / 100,
+                    netRx,
+                    netTx,
+                    timestamp: Date.now(),
+                }
+                res.write(`data: ${JSON.stringify(output)}\n\n`)
+            } catch (e) {
+                // Keep streaming even if one JSON parsing fails
+            }
+        })
+
+        req.on('close', () => {
+            stream.destroy()
+            res.end()
+        })
+
+        stream.on('error', (err) => {
+            res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`)
+            res.end()
+        })
+    } catch (err) {
+        res.status(500).json({ error: err.message })
+    }
+})
+
+/**
  * GET /api/containers/:id/logs
  * Fetch container logs (last 500 lines)
  */
