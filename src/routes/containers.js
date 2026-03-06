@@ -217,6 +217,64 @@ router.get('/:id/logs', async (req, res) => {
 })
 
 /**
+ * GET /api/containers/:id/logs/stream
+ * Fetch container logs (live stream via SSE)
+ */
+router.get('/:id/logs/stream', async (req, res) => {
+    try {
+        const docker = getDocker()
+        const container = docker.getContainer(req.params.id)
+        const tail = parseInt(req.query.tail) || 500
+
+        res.setHeader('Content-Type', 'text/event-stream')
+        res.setHeader('Cache-Control', 'no-cache')
+        res.setHeader('Connection', 'keep-alive')
+        res.flushHeaders()
+
+        const stream = await container.logs({
+            stdout: true,
+            stderr: true,
+            timestamps: true,
+            tail,
+            follow: true
+        })
+
+        if (!stream || typeof stream.on !== 'function') {
+            res.write(`data: ${JSON.stringify({ error: 'Failed to access logs stream' })}\n\n`)
+            return res.end()
+        }
+
+        stream.on('data', (chunk) => {
+            const lines = chunk.toString('utf8')
+                .split('\n')
+                .map(line => line.replace(/^[\u0000-\u0009\u000B-\u001F\u007F]+/, ''))
+                .filter(line => line.trim().length > 0)
+
+            for (const line of lines) {
+                res.write(`data: ${JSON.stringify({ log: line })}\n\n`)
+            }
+        })
+
+        req.on('close', () => {
+            try { stream.destroy() } catch (e) { }
+            res.end()
+        })
+
+        stream.on('error', (err) => {
+            res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`)
+            res.end()
+        })
+
+        stream.on('end', () => {
+            res.end()
+        })
+
+    } catch (err) {
+        res.status(500).json({ error: err.message })
+    }
+})
+
+/**
  * POST /api/containers
  * Create container or perform container actions (start, stop, restart, remove)
  */
